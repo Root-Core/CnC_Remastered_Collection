@@ -829,6 +829,9 @@ void EventClass::Execute(void)
 					((FootClass *)techno)->Clear_Navigation_List();
 				}
 			}
+			else if (techno && CFE_Patch_Can_Have_Rally_Point(*techno)) {
+				techno->Assign_Target(TARGET_NONE);
+			}
 			break;
 
 		/*
@@ -1052,11 +1055,16 @@ void EventClass::Execute(void)
 
 		//CFE Patch events
 		case SET_RALLY:
-			if (BuildingClass* const building = As_Building(Data.NavCom.Whom))
+			if (BuildingClass* const building = Data.NavCom.Whom.As_Building())
 			{
-				if (building->RallyPoint != Data.NavCom.Where)
+				TARGET newTarget = Data.NavCom.Where.As_Target();
+				if (building->RallyPoint != newTarget)
 				{
-					building->RallyPoint = Data.NavCom.Where;
+					if (building->As_Target() != newTarget)
+						building->RallyPoint = newTarget;
+					else
+						building->RallyPoint = TARGET_NONE;
+
 					Map.Flag_To_Redraw(true);
 				}
 			}
