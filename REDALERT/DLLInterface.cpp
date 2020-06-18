@@ -6507,7 +6507,7 @@ if (debug_output) {
 	if (cell_ptr->IsCursorHere && Map.PendingObject && CFE_Patch_Is_Wall(*Map.PendingObject) && Map.ZoneCell != cell_ptr->Cell_Number()) {
 		CNCDynamicMapEntryStruct& cursorEntry = dynamic_map->Entries[entry_index++];
 
-		strncpy(cursorEntry.AssetName, cell_ptr->Is_Clear_To_Build(SPEED_TRACK) ? "PLACEMENT_EXTRA" : "PLACEMENT_BAD", CNC_OBJECT_ASSET_NAME_LENGTH);
+		strncpy(cursorEntry.AssetName, cell_ptr->Is_Clear_To_Build(SPEED_NONE) ? "PLACEMENT_EXTRA" : "PLACEMENT_BAD", CNC_OBJECT_ASSET_NAME_LENGTH);
 		cursorEntry.AssetName[CNC_OBJECT_ASSET_NAME_LENGTH - 1] = 0;
 		cursorEntry.Type = -1;
 		cursorEntry.Owner = (char)cell_ptr->Owner;

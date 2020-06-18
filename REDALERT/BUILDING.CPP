@@ -433,15 +433,13 @@ RadioMessageType BuildingClass::Receive_Message(RadioClass * from, RadioMessageT
 			}
 			TechnoClass::Receive_Message(from, message, param);
 			
-			//Either tell the unit to move to the rally point, or have it run away
-			if (Can_Have_Rally_Point() && Target_Legal(RallyPoint)) {
-				SpeedType speed = from->Is_Techno() ? ((TechnoClass const*)from)->Techno_Type_Class()->Speed : SPEED_TRACK;
-
-				from->Set_Mission(MISSION_MOVE);
-				static_cast<FootClass*>(from)->Assign_Destination(Target_For_Rally_Point(speed));
-				return RADIO_ROGER;
+			//Rally the unit
+			if (Can_Have_Rally_Point())
+			{
+				if (!Rally_Unit(static_cast<FootClass&>(*from)))
+					return RADIO_RUN_AWAY;
 			}
-			
+
 			return(RADIO_ROGER);
 
 		default:
@@ -904,7 +902,7 @@ bool BuildingClass::Unlimbo_Wall(COORDINATE coord)
 			const OverlayTypeClass& oclass = OverlayTypeClass::As_Reference(otype);
 			if (Create_Overlay_At(oclass, placecell))
 			{
-				if (ActiveCFEPatchConfig.WallBuildLength > 1)
+				if (CFE_Patch_Should_Extend_Walls())
 				{
 					/* cfehunter 12/06/2020
 					* Walk through every cardinal direction and run the same scanning logic as the build cursor
@@ -918,9 +916,20 @@ bool BuildingClass::Unlimbo_Wall(COORDINATE coord)
 						{
 							adjcell = Adjacent_Cell(adjcell, dir);
 
+							//FluffyQuack 14/06/2020: If WallsAlwaysHaveFullCost is true then we charge the player for each extra piece. Abort with "insufficient funds" if player can't afford it
+							if (ActiveCFEPatchConfig.WallsAlwaysHaveFullCost && House->Available_Money() < Class->Cost_Of())
+							{
+								Speak(VOX_NO_CASH);
+								break;
+							}
+
 							//If we fail to create the overlay here, abort this direction and move on
 							if (!Create_Overlay_At(oclass, adjcell))
 								break;
+
+							//Pay the cost of this extra wall
+							if (ActiveCFEPatchConfig.WallsAlwaysHaveFullCost)
+								House->Spend_Money(Class->Cost_Of());
 						}
 					}
 				}
@@ -1922,11 +1931,7 @@ void BuildingClass::Active_Click_With(ActionType action, ObjectClass * object)
 	}
 
 	if (action == ACTION_MOVE && Can_Have_Rally_Point()) {
-		WWDebugString("Active_Click_With(ActionType action, ObjectClass * object)\n");
 		Player_Set_Rally_Point(object->As_Target());
-
-		//RallyPoint = object->As_Target();
-		//Map.Flag_To_Redraw(true);
 	}
 }
 
@@ -1969,11 +1974,6 @@ void BuildingClass::Active_Click_With(ActionType action, CELL cell)
 		}
 		else if (Can_Have_Rally_Point()) {
 			Player_Set_Rally_Point(::As_Target(cell));
-
-			//RallyPoint = ::As_Target(cell);
-			//Map.Flag_To_Redraw(true);
-
-			WWDebugString("Active_Click_With(ActionType action, CELL cell)\n");
 		}
 	}
 }
@@ -2122,11 +2122,7 @@ int BuildingClass::Exit_Object(TechnoClass * base)
 					ScenarioInit++;
 					cell = Find_Exit_Cell(base);
 					if (cell != 0 && base->Unlimbo(Cell_Coord(cell), Direction(Cell_Coord(cell)))) {
-						if (Can_Have_Rally_Point() && RallyPoint) {
-							base->Set_Mission(MISSION_MOVE);
-							base->Assign_Destination(Target_For_Rally_Point(base->Techno_Type_Class()->Speed));
-						}
-						else {
+						if (!Rally_Unit(static_cast<FootClass&>(*base))) {
 							base->Assign_Mission(MISSION_GUARD);
 						}
 						ScenarioInit--;
@@ -4392,6 +4388,10 @@ int BuildingClass::Mission_Repair(void)
 						**	The repair step resulted in a completely repaired unit.
 						*/
 						case RADIO_ALL_DONE:
+							if (!Rally_Unit(static_cast<FootClass&>(*Contact_With_Whom()))) {
+								Transmit_Message(RADIO_RUN_AWAY);
+								Transmit_Message(RADIO_OVER_OUT);
+							}
 
 							// MBL 04.27.2020: Make only audible to the correct player
 							// if (IsOwnedByPlayer) Speak(VOX_UNIT_REPAIRED);
@@ -6195,4 +6195,33 @@ unsigned BuildingClass::Spied_By() const
 	}
 
 	return spiedby;
+}
+
+/***********************************************************************************************
+ * BuildingClass::Rally_Unit -- Order a unit to the buildings rally point                      *
+ *                                                                                             *
+ *    This routine will attempt to order a unit to move the the buildings rally point.         *
+ *    If the building has a rally point, and the unit should be rallyed.                       *
+ *                                                                                             *
+ * INPUT:   unit - unit to rally                                                               *
+ *                                                                                             *
+ * OUTPUT:  true if successful                                                                 *
+ *                                                                                             *
+ * WARNINGS: none                                                                              *
+ *                                                                                             *
+ * HISTORY:                                                                                    *
+ *   14/06/2020 cfehunter : Created.                                                           *
+ *=============================================================================================*/
+bool BuildingClass::Rally_Unit(FootClass& unit)
+{
+	if (Can_Have_Rally_Point() && CFE_Patch_Unit_Should_Rally(unit) && Target_Legal(RallyPoint))
+	{
+		//SpeedType speed = from->Is_Techno() ? ((TechnoClass const*)from)->Techno_Type_Class()->Speed : SPEED_TRACK;
+		const TARGET rallyTarget = Target_For_Rally_Point(unit.Techno_Type_Class()->Speed);
+
+		//Make sure units dont rally to themselves. Only a problem for repair/reload pads
+		long move_target = (long)(unit.As_Target() != rallyTarget ? rallyTarget : ::As_Target(Nearby_Location()));
+		return Target_Legal(move_target) && Transmit_Message(RADIO_MOVE_HERE, move_target, &unit) == RADIO_ROGER;
+	}
+	return false;
 }
